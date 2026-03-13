@@ -24,12 +24,8 @@ LOG_MODULE_REGISTER(cs_trace, CONFIG_DEBUG_CORESIGHT_NRF_LOG_LEVEL);
 #define CTI_CH_TPIU_FLUSH_REQ_OFFSET (1)
 
 #define TS_CLOCKRATE                                                                               \
-	(DT_PROP(DT_NODELABEL(hsfll200), clock_frequency) /                                        \
+	(DT_PROP(DT_INST_CLOCKS_CTLR(0), clock_frequency) /                                        \
 	 CONFIG_DEBUG_CORESIGHT_NRF_TSGEN_CLK_DIV)
-
-#define ATBREPLICATOR_IDFILTER_FORWARD_STM                                                         \
-	BIT(CONFIG_DEBUG_CORESIGHT_NRF_ATB_TRACE_ID_STM_GLOBAL >> 4)
-#define ATBFUNNEL211_STM_ENS_MASK BIT(2)
 
 enum coresight_nrf_mode {
 	CORESIGHT_NRF_MODE_UNCONFIGURED,
@@ -56,6 +52,7 @@ static void nrf_tsgen_init(void)
 	LOG_INF("CoreSight Host TSGEN initialized with clockrate %u", TS_CLOCKRATE);
 }
 
+#ifdef DEBUG_CORESIGHT_NRF_TPIU_FFCR_TRIG
 static void nrf_cti_for_tpiu_init(void)
 {
 	mem_addr_t cti210 = DT_REG_ADDR(DT_NODELABEL(cti210));
@@ -71,6 +68,7 @@ static void nrf_cti_for_tpiu_init(void)
 
 	LOG_INF("CoreSight Host CTI initialized");
 }
+#endif
 
 static void nrf_tpiu_init(void)
 {
@@ -95,6 +93,7 @@ static void nrf_tpiu_init(void)
 	LOG_INF("CoreSight Host TPIU initialized");
 }
 
+#ifdef CONFIG_DEBUG_NRF_ETR
 static void nrf_etr_init(uintptr_t buf, size_t buf_word_len)
 {
 	mem_addr_t etr = DT_REG_ADDR(DT_NODELABEL(etr));
@@ -113,6 +112,7 @@ static void nrf_etr_init(uintptr_t buf, size_t buf_word_len)
 
 	LOG_INF("Coresight Host ETR initialized");
 }
+#endif
 
 static void nrf_stm_init(void)
 {
@@ -134,10 +134,9 @@ static void nrf_stm_init(void)
 		sys_write32((1 << STM_STMHEMCR_EN_Pos), stm + STM_STMHEMCR_OFFSET);
 	}
 
-	sys_write32(((CONFIG_DEBUG_CORESIGHT_NRF_ATB_TRACE_ID_STM_GLOBAL & STM_STMTCSR_TRACEID_Msk)
-		     << STM_STMTCSR_TRACEID_Pos) |
-			    (1 << STM_STMTCSR_EN_Pos) | (1 << STM_STMTCSR_TSEN_Pos),
-		    stm + STM_STMTCSR_OFFSET);
+	sys_write32(((CONFIG_DEBUG_CORESIGHT_NRF_ATB_TRACE_ID_STM_GLOBAL << STM_STMTCSR_TRACEID_Pos) |
+                    (1 << STM_STMTCSR_EN_Pos) | (1 << STM_STMTCSR_TSEN_Pos)),
+                    stm + STM_STMTCSR_OFFSET);
 
 	coresight_lock(stm);
 
@@ -162,40 +161,32 @@ static void nrf_atbfunnel_init(mem_addr_t funnel_addr, uint32_t enable_set_mask)
 	coresight_lock(funnel_addr);
 }
 
-static void nrf_atbreplicator_init(mem_addr_t replicator_addr, uint32_t filter, bool ch0_allow,
-				   bool ch1_allow)
+static void nrf_atbreplicator_filter_init(mem_addr_t replicator_addr, uint32_t filter_offset, uint32_t filter)
 {
 	coresight_unlock(replicator_addr);
 
-	uint32_t ch0_current = sys_read32(replicator_addr + ATBREPLICATOR_IDFILTER0_OFFSET);
-	uint32_t ch1_current = sys_read32(replicator_addr + ATBREPLICATOR_IDFILTER1_OFFSET);
-
-	if (ch0_allow) {
-		sys_write32(ch0_current & ~filter,
-			    replicator_addr + ATBREPLICATOR_IDFILTER0_OFFSET);
-	} else {
-		sys_write32(ch0_current | filter, replicator_addr + ATBREPLICATOR_IDFILTER0_OFFSET);
-	}
-
-	if (ch1_allow) {
-		sys_write32(ch1_current & ~filter,
-			    replicator_addr + ATBREPLICATOR_IDFILTER1_OFFSET);
-	} else {
-		sys_write32(ch1_current | filter, replicator_addr + ATBREPLICATOR_IDFILTER1_OFFSET);
-	}
+	sys_write32(filter, replicator_addr + filter_offset);
 
 	coresight_lock(replicator_addr);
 }
 
+/* For each idfilter child node, write its filter value to the replicator. */
+#define NRF_ATBREPLICATOR_CHILD_INIT(child_node_id)		\
+	nrf_atbreplicator_filter_init(				\
+		DT_REG_ADDR(DT_PARENT(child_node_id)),		\
+		DT_PROP(child_node_id, reg),			\
+		DT_PROP(child_node_id, filter));
+
+#if CONFIG_DEBUG_NRF_ETR
 static int coresight_nrf_init_stm_etr(uintptr_t buf, size_t buf_word_len)
 {
 	mem_addr_t atbfunnel211 = DT_REG_ADDR(DT_NODELABEL(atbfunnel211));
-	mem_addr_t atbreplicator210 = DT_REG_ADDR(DT_NODELABEL(atbreplicator210));
-	mem_addr_t atbreplicator213 = DT_REG_ADDR(DT_NODELABEL(atbreplicator213));
 
-	nrf_atbfunnel_init(atbfunnel211, ATBFUNNEL211_STM_ENS_MASK);
-	nrf_atbreplicator_init(atbreplicator210, ATBREPLICATOR_IDFILTER_FORWARD_STM, false, true);
-	nrf_atbreplicator_init(atbreplicator213, ATBREPLICATOR_IDFILTER_FORWARD_STM, false, true);
+	COND_CODE_1(DT_NODE_HAS_PROP(DT_NODELABEL(atbfunnel211), ctrl_reg),
+		    (nrf_atbfunnel_init(atbfunnel211, DT_PROP(DT_NODELABEL(atbfunnel211), ctrl_reg));), ())
+
+	DT_FOREACH_CHILD(DT_NODELABEL(atbreplicator210), NRF_ATBREPLICATOR_CHILD_INIT)
+	DT_FOREACH_CHILD(DT_NODELABEL(atbreplicator213), NRF_ATBREPLICATOR_CHILD_INIT)
 
 	nrf_tsgen_init();
 	nrf_etr_init(buf, buf_word_len);
@@ -203,19 +194,33 @@ static int coresight_nrf_init_stm_etr(uintptr_t buf, size_t buf_word_len)
 
 	return 0;
 }
+#endif
 
 static int coresight_nrf_init_stm_tpiu(void)
 {
+	mem_addr_t atbfunnel210 = DT_REG_ADDR(DT_NODELABEL(atbfunnel210));
 	mem_addr_t atbfunnel211 = DT_REG_ADDR(DT_NODELABEL(atbfunnel211));
-	mem_addr_t atbreplicator210 = DT_REG_ADDR(DT_NODELABEL(atbreplicator210));
-	mem_addr_t atbreplicator213 = DT_REG_ADDR(DT_NODELABEL(atbreplicator213));
+	mem_addr_t atbfunnel212 = DT_REG_ADDR(DT_NODELABEL(atbfunnel212));
+	mem_addr_t atbfunnel213 = DT_REG_ADDR(DT_NODELABEL(atbfunnel213));
 
-	nrf_atbfunnel_init(atbfunnel211, ATBFUNNEL211_STM_ENS_MASK);
-	nrf_atbreplicator_init(atbreplicator210, ATBREPLICATOR_IDFILTER_FORWARD_STM, false, true);
-	nrf_atbreplicator_init(atbreplicator213, ATBREPLICATOR_IDFILTER_FORWARD_STM, true, false);
+	COND_CODE_1(DT_NODE_HAS_PROP(DT_NODELABEL(atbfunnel210), ctrl_reg),
+		    (nrf_atbfunnel_init(atbfunnel210, DT_PROP(DT_NODELABEL(atbfunnel210), ctrl_reg));), ())
+	COND_CODE_1(DT_NODE_HAS_PROP(DT_NODELABEL(atbfunnel211), ctrl_reg),
+		    (nrf_atbfunnel_init(atbfunnel211, DT_PROP(DT_NODELABEL(atbfunnel211), ctrl_reg));), ())
+	COND_CODE_1(DT_NODE_HAS_PROP(DT_NODELABEL(atbfunnel212), ctrl_reg),
+		    (nrf_atbfunnel_init(atbfunnel212, DT_PROP(DT_NODELABEL(atbfunnel212), ctrl_reg));), ())
+	COND_CODE_1(DT_NODE_HAS_PROP(DT_NODELABEL(atbfunnel213), ctrl_reg),
+		    (nrf_atbfunnel_init(atbfunnel213, DT_PROP(DT_NODELABEL(atbfunnel213), ctrl_reg));), ())
+
+	DT_FOREACH_CHILD(DT_NODELABEL(atbreplicator210), NRF_ATBREPLICATOR_CHILD_INIT)
+	DT_FOREACH_CHILD(DT_NODELABEL(atbreplicator211), NRF_ATBREPLICATOR_CHILD_INIT)
+	DT_FOREACH_CHILD(DT_NODELABEL(atbreplicator212), NRF_ATBREPLICATOR_CHILD_INIT)
+	DT_FOREACH_CHILD(DT_NODELABEL(atbreplicator213), NRF_ATBREPLICATOR_CHILD_INIT)
 
 	nrf_tsgen_init();
+#ifdef DEBUG_CORESIGHT_NRF_TPIU_FFCR_TRIG
 	nrf_cti_for_tpiu_init();
+#endif
 	nrf_tpiu_init();
 	nrf_stm_init();
 
@@ -248,12 +253,14 @@ static int coresight_nrf_init(const struct device *dev)
 	case CORESIGHT_NRF_MODE_STM_TPIU: {
 		return coresight_nrf_init_stm_tpiu();
 	}
+#ifdef CONFIG_DEBUG_NRF_ETR
 	case CORESIGHT_NRF_MODE_STM_ETR: {
 		uintptr_t etr_buffer = DT_REG_ADDR(DT_NODELABEL(etr_buffer));
 		size_t buf_word_len = DT_REG_SIZE(DT_NODELABEL(etr_buffer)) / sizeof(uint32_t);
 
 		return coresight_nrf_init_stm_etr(etr_buffer, buf_word_len);
 	}
+#endif
 	default: {
 		LOG_ERR("Unsupported Coresight mode");
 		return -ENOTSUP;

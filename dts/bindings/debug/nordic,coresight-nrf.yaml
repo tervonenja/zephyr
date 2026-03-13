@@ -11,6 +11,10 @@ properties:
   reg:
     required: true
 
+  clocks:
+    required: true
+    description: Clock source for the CoreSight timestamp generator (e.g. hsfll200).
+
   mode:
     required: true
     type: string
