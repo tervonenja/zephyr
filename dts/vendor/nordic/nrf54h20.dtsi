@@ -581,6 +581,7 @@
 				compatible = "nordic,coresight-nrf";
 				reg = <0x40000 0x11000>;
 				status = "disabled";
+				clocks = <&hsfll200>;
 				nordic,clockpin-enable = <NRF_FUN_TPIU_CLOCK>;
 				#address-cells = <1>;
 				#size-cells = <1>;
@@ -615,34 +616,67 @@
 				};
 
 				atbreplicator210: atbreplicator@8000 {
+					compatible = "nordic,coresight-replicator";
 					reg = <0x8000 0x1000>;
+					#address-cells = <1>;
+                 	#size-cells = <0>;
+
+					idfilter210_0: idfilter@0 {
+						reg = <0x0>;
+						filter = <0xff>;
+					};
+
+					idfilter210_1: idfilter@4 {
+						reg = <0x4>;
+						filter = <0xf7>;
+					};
 				};
 
 				atbreplicator211: atbreplicator@9000 {
+					compatible = "nordic,coresight-replicator";
 					reg = <0x9000 0x1000>;
 				};
 
 				atbreplicator212: atbreplicator@a000 {
+					compatible = "nordic,coresight-replicator";
 					reg = <0xa000 0x1000>;
 				};
 
 				atbreplicator213: atbreplicator@b000 {
+					compatible = "nordic,coresight-replicator";
 					reg = <0xb000 0x1000>;
+					#address-cells = <1>;
+                 	#size-cells = <0>;
+
+					idfilter213_0: idfilter@0 {
+						reg = <0x0>;
+						filter = <0xf7>;
+					};
+
+					idfilter213_1: idfilter@4 {
+						reg = <0x4>;
+						filter = <0xff>;
+					};
 				};
 
 				atbfunnel210: atbfunnel@c000 {
+					compatible = "nordic,coresight-funnel";
 					reg = <0xc000 0x1000>;
 				};
 
 				atbfunnel211: atbfunnel@d000 {
+					compatible = "nordic,coresight-funnel";
+					ctrl-reg = <0x03>;
 					reg = <0xd000 0x1000>;
 				};
 
 				atbfunnel212: atbfunnel@e000 {
+					compatible = "nordic,coresight-funnel";
 					reg = <0xe000 0x1000>;
 				};
 
 				atbfunnel213: atbfunnel@f000 {
+					compatible = "nordic,coresight-funnel";
 					reg = <0xf000 0x1000>;
 				};
 			};

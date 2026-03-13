@@ -1,0 +1,18 @@
+# Copyright (c) 2026 Nordic Semiconductor ASA
+# SPDX-License-Identifier: Apache-2.0
+
+description: Nordic Coresight Funnel Configuration
+
+compatible: "nordic,coresight-funnel"
+
+include: [base.yaml]
+
+properties:
+  reg:
+    required: true
+
+  ctrl-reg:
+    required: false
+    type: int
+    description: |
+      Control register value written to ATBFUNNEL CTRLREG to select enabled input ports.
